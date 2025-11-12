@@ -1,0 +1,307 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String          @id @default(cuid())
+  email          String          @unique
+  username       String          @unique
+  passwordHash   String          @map("password_hash")
+  fullName       String?         @map("full_name")
+  avatarUrl      String?         @map("avatar_url")
+  phone          String?
+  paymentMethods Json            @default("[]") @map("payment_methods")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  // Relations
+  createdTrips      Trip[]           @relation("TripCreator")
+  tripMemberships   TripMember[]
+  proposals         Proposal[]
+  votes             Vote[]
+  assignedItems     ListItem[]       @relation("AssignedTo")
+  purchasedItems    ListItem[]       @relation("PurchasedBy")
+  createdFeatures   OptInFeature[]
+  optIns            UserOptIn[]
+  paidExpenses      Expense[]
+  expenseSplits     ExpenseSplit[]
+  settlementsFrom   Settlement[]     @relation("FromUser")
+  settlementsTo     Settlement[]     @relation("ToUser")
+  comments          Comment[]
+  notifications     Notification[]
+
+  @@map("users")
+}
+
+model Trip {
+  id            String      @id @default(cuid())
+  name          String
+  description   String?
+  destination   String?
+  startDate     DateTime?   @map("start_date")
+  endDate       DateTime?   @map("end_date")
+  parentTripId  String?     @map("parent_trip_id")
+  createdById   String?     @map("created_by")
+  costStructure String?     @map("cost_structure")
+  totalBudget   Decimal?    @map("total_budget")
+  currency      String      @default("USD")
+  status        String      @default("planning")
+  settings      Json        @default("{}")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  // Relations
+  parentTrip    Trip?           @relation("SubTrips", fields: [parentTripId], references: [id], onDelete: Cascade)
+  subTrips      Trip[]          @relation("SubTrips")
+  createdBy     User?           @relation("TripCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  members       TripMember[]
+  proposals     Proposal[]
+  listItems     ListItem[]
+  optInFeatures OptInFeature[]
+  expenses      Expense[]
+  settlements   Settlement[]
+  comments      Comment[]
+  notifications Notification[]
+
+  @@map("trips")
+}
+
+model TripMember {
+  id             String   @id @default(cuid())
+  tripId         String   @map("trip_id")
+  userId         String   @map("user_id")
+  role           String   @default("member")
+  joinedAt       DateTime @default(now()) @map("joined_at")
+  costPercentage Decimal? @map("cost_percentage")
+  status         String   @default("active")
+
+  // Relations
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tripId, userId])
+  @@map("trip_members")
+}
+
+model Proposal {
+  id             String    @id @default(cuid())
+  tripId         String    @map("trip_id")
+  proposedById   String?   @map("proposed_by")
+  category       String
+  title          String
+  description    String?
+  url            String?
+  price          Decimal?
+  currency       String    @default("USD")
+  startDate      DateTime? @map("start_date")
+  endDate        DateTime? @map("end_date")
+  location       String?
+  metadata       Json      @default("{}")
+  votingType     String    @default("single") @map("voting_type")
+  votingDeadline DateTime? @map("voting_deadline")
+  status         String    @default("open")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  trip       Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  proposedBy User?     @relation(fields: [proposedById], references: [id], onDelete: SetNull)
+  votes      Vote[]
+  expenses   Expense[]
+  comments   Comment[]
+
+  @@map("proposals")
+}
+
+model Vote {
+  id         String   @id @default(cuid())
+  proposalId String   @map("proposal_id")
+  userId     String   @map("user_id")
+  voteValue  Int?     @map("vote_value")
+  rank       Int?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  // Relations
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([proposalId, userId, rank])
+  @@map("votes")
+}
+
+model ListItem {
+  id           String    @id @default(cuid())
+  tripId       String    @map("trip_id")
+  category     String    @default("grocery")
+  name         String
+  quantity     Int       @default(1)
+  unit         String?
+  estimatedCost Decimal?  @map("estimated_cost")
+  actualCost   Decimal?  @map("actual_cost")
+  assignedToId String?   @map("assigned_to")
+  purchasedById String?   @map("purchased_by")
+  status       String    @default("pending")
+  notes        String?
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  trip        Trip  @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  assignedTo  User? @relation("AssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  purchasedBy User? @relation("PurchasedBy", fields: [purchasedById], references: [id], onDelete: SetNull)
+
+  @@map("list_items")
+}
+
+model OptInFeature {
+  id              String      @id @default(cuid())
+  tripId          String      @map("trip_id")
+  name            String
+  description     String?
+  totalCost       Decimal?    @map("total_cost")
+  costPerPerson   Decimal?    @map("cost_per_person")
+  minParticipants Int         @default(1) @map("min_participants")
+  maxParticipants Int?        @map("max_participants")
+  deadline        DateTime?
+  createdById     String?     @map("created_by")
+  createdAt       DateTime    @default(now()) @map("created_at")
+
+  // Relations
+  trip      Trip        @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  createdBy User?       @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  optIns    UserOptIn[]
+  expenses  Expense[]
+
+  @@map("opt_in_features")
+}
+
+model UserOptIn {
+  id        String   @id @default(cuid())
+  featureId String   @map("feature_id")
+  userId    String   @map("user_id")
+  optedIn   Boolean  @default(true) @map("opted_in")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  feature OptInFeature @relation(fields: [featureId], references: [id], onDelete: Cascade)
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([featureId, userId])
+  @@map("user_opt_ins")
+}
+
+model Expense {
+  id               String         @id @default(cuid())
+  tripId           String         @map("trip_id")
+  paidById         String?        @map("paid_by")
+  amount           Decimal
+  currency         String         @default("USD")
+  category         String?
+  description      String
+  receiptUrl       String?        @map("receipt_url")
+  expenseDate      DateTime       @default(now()) @map("expense_date")
+  splitType        String         @default("equal") @map("split_type")
+  relatedProposalId String?        @map("related_proposal_id")
+  relatedFeatureId  String?        @map("related_feature_id")
+  status           String         @default("pending")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+
+  // Relations
+  trip            Trip           @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  paidBy          User?          @relation(fields: [paidById], references: [id], onDelete: SetNull)
+  relatedProposal Proposal?      @relation(fields: [relatedProposalId], references: [id], onDelete: SetNull)
+  relatedFeature  OptInFeature?  @relation(fields: [relatedFeatureId], references: [id], onDelete: SetNull)
+  splits          ExpenseSplit[]
+  comments        Comment[]
+
+  @@map("expenses")
+}
+
+model ExpenseSplit {
+  id         String    @id @default(cuid())
+  expenseId  String    @map("expense_id")
+  userId     String    @map("user_id")
+  amount     Decimal
+  percentage Decimal?
+  isSettled  Boolean   @default(false) @map("is_settled")
+  settledAt  DateTime? @map("settled_at")
+
+  // Relations
+  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([expenseId, userId])
+  @@map("expense_splits")
+}
+
+model Settlement {
+  id               String    @id @default(cuid())
+  tripId           String    @map("trip_id")
+  fromUserId       String?   @map("from_user")
+  toUserId         String?   @map("to_user")
+  amount           Decimal
+  currency         String    @default("USD")
+  status           String    @default("pending")
+  paymentMethod    String?   @map("payment_method")
+  paymentReference String?   @map("payment_reference")
+  paidAt           DateTime? @map("paid_at")
+  notes            String?
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  trip     Trip  @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  fromUser User? @relation("FromUser", fields: [fromUserId], references: [id], onDelete: SetNull)
+  toUser   User? @relation("ToUser", fields: [toUserId], references: [id], onDelete: SetNull)
+
+  @@map("settlements")
+}
+
+model Comment {
+  id              String    @id @default(cuid())
+  userId          String    @map("user_id")
+  tripId          String?   @map("trip_id")
+  proposalId      String?   @map("proposal_id")
+  expenseId       String?   @map("expense_id")
+  parentCommentId String?   @map("parent_comment_id")
+  content         String
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trip          Trip?     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  proposal      Proposal? @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  expense       Expense?  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  parentComment Comment?  @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
+  replies       Comment[] @relation("CommentReplies")
+
+  @@map("comments")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  tripId    String?  @map("trip_id")
+  type      String
+  title     String
+  message   String?
+  data      Json     @default("{}")
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trip Trip? @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
